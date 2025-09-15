@@ -12,23 +12,53 @@ function loadTasks() {
   return JSON.parse(data).tasks;
 }
 
+function saveTasks() {
+  fs.writeFileSync(path.join(__dirname, 'task.json'), JSON.stringify({ tasks }, null, 2));
+}
+
+// Helper: parse boolean from query
+function parseBool(val) {
+  if (val === undefined) return undefined;
+  if (val === 'true') return true;
+  if (val === 'false') return false;
+  return undefined;
+}
+
 let tasks = loadTasks();
 let nextId = tasks.length > 0 ? Math.max(...tasks.map(t => t.id)) + 1 : 1;
 
 // Create Task
 app.post("/tasks", (req, res) => {
-  const { title, description, completed } = req.body;
-  if (!title || !description || typeof completed !== "boolean") {
+  const { title, description, completed, priority } = req.body;
+  if (!title || !description || typeof completed !== "boolean" || (priority && !["low","medium","high"].includes(priority))) {
     return res.status(400).json({ error: "Invalid task data" });
   }
-  const newTask = { id: nextId++, title, description, completed };
+  const newTask = { id: nextId++, title, description, completed, priority, createdAt: new Date().toISOString() };
   tasks.push(newTask);
+  saveTasks();
   res.status(201).json(newTask);
 });
 
-// Get All Tasks
+// Get All Tasks (filter & sort)
 app.get("/tasks", (req, res) => {
-  res.json(tasks);
+  let result = [...tasks];
+  const completed = parseBool(req.query.completed);
+  if (completed !== undefined) {
+    result = result.filter(t => t.completed === completed);
+  }
+  // Sort by creation date
+  result.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  res.json(result);
+});
+
+// Get Tasks by Priority
+app.get("/tasks/priority/:level", (req, res) => {
+  const level = req.params.level;
+  if (!["low","medium","high"].includes(level)) {
+    return res.status(400).json({ error: "Invalid priority level" });
+  }
+  const result = tasks.filter(t => t.priority === level);
+  res.json(result);
 });
 
 // Get Task by ID
@@ -42,8 +72,8 @@ app.get("/tasks/:id", (req, res) => {
 // Update Task
 app.put("/tasks/:id", (req, res) => {
   const id = parseInt(req.params.id);
-  const { title, description, completed } = req.body;
-  if (!title || !description || typeof completed !== "boolean") {
+  const { title, description, completed, priority } = req.body;
+  if (!title || !description || typeof completed !== "boolean" || (priority && !["low","medium","high"].includes(priority))) {
     return res.status(400).json({ error: "Invalid task data" });
   }
   const task = tasks.find((t) => t.id === id);
@@ -51,6 +81,8 @@ app.put("/tasks/:id", (req, res) => {
   task.title = title;
   task.description = description;
   task.completed = completed;
+  task.priority = priority;
+  saveTasks();
   res.json(task);
 });
 
